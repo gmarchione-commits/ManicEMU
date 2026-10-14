@@ -1,0 +1,62 @@
+name: Build Manic EMU IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: List schemes
+        run: xcodebuild -list -project ManicEmu/ManicEmu.xcodeproj
+
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ManicEmu/ManicEmu.xcodeproj \
+            -scheme ManicEmu \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log
+
+      - name: Show first errors
+        if: failure()
+        run: grep -E "error:" build.log | head -40 || true
+
+      - name: Package IPA
+        run: |
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
+          echo "App: $APP"
+          mkdir Payload
+          cp -R "$APP" Payload/
+          zip -qr ManicEmu.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ManicEmu-ipa
+          path: ManicEmu.ipa
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
