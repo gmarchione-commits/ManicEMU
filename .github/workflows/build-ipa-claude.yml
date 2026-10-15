@@ -1,0 +1,72 @@
+name: Build IPA Claude
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Checkout (con submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      - name: Xcode piu recente
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Dipendenze (se presenti)
+        working-directory: ManicEmu
+        run: |
+          if [ -f Podfile ]; then pod install; fi
+
+      - name: Mostra workspace e scheme
+        working-directory: ManicEmu
+        run: |
+          ls
+          WORKSPACE=$(ls -d *.xcworkspace | head -n 1)
+          xcodebuild -workspace "$WORKSPACE" -list
+
+      - name: Compila (senza firma)
+        working-directory: ManicEmu
+        run: |
+          set -o pipefail
+          WORKSPACE=$(ls -d *.xcworkspace | head -n 1)
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "ManicEmu" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log
+
+      - name: Crea IPA
+        working-directory: ManicEmu
+        run: |
+          APP=$(find build/Build/Products -maxdepth 3 -name "*.app" | head -n 1)
+          echo "App trovata: $APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qr ManicEMU.ipa Payload
+
+      - name: Salva IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ManicEMU-ipa
+          path: ManicEmu/ManicEMU.ipa
+
+      - name: Salva log (utile se fallisce)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: ManicEmu/build.log
+          if-no-files-found: ignore
