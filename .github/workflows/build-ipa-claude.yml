@@ -18,33 +18,24 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Mostra cosa c'e nel repository
+      - name: Trova progetto e scheme dell'app iOS
         run: |
-          echo "== Cartelle principali =="
-          ls
-          echo "== Progetti trovati =="
-          find . -maxdepth 4 \( -name "*.xcworkspace" -o -name "*.xcodeproj" -o -name "Podfile" -o -name "Package.swift" \) -not -path "*/Pods/*" -not -path "*.xcodeproj/*" | head -50
-
-      - name: Pod install se serve
-        run: |
-          PODFILE=$(find . -maxdepth 4 -name Podfile -not -path "*/Pods/*" | head -n 1)
-          if [ -n "$PODFILE" ]; then
-            cd "$(dirname "$PODFILE")"
-            pod install
-          fi
-
-      - name: Trova workspace e scheme dell'app iOS
-        run: |
-          WS=$(find . -maxdepth 4 -name "*.xcworkspace" -not -path "*/Pods/*" -not -path "*.xcodeproj/*" | head -n 1)
-          if [ -n "$WS" ]; then
-            FLAG="-workspace"; TARGET="$WS"; KEY="workspace"
-          else
-            PROJ=$(find . -maxdepth 4 -name "*.xcodeproj" -not -path "*/Pods/*" | head -n 1)
-            FLAG="-project"; TARGET="$PROJ"; KEY="project"
-          fi
-          if [ -z "$TARGET" ]; then
-            echo "Nessun progetto Xcode trovato"
+          echo "== Progetti Xcode nel repository =="
+          find . \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) -not -path "*/Pods/*" -not -path "*.xcodeproj/*" | head -100
+          PROJ=$(find . -iname "*manic*.xcodeproj" -not -path "*/Pods/*" | head -n 1)
+          if [ -z "$PROJ" ]; then
+            echo "Nessun progetto con manic nel nome: guarda l'elenco qui sopra"
             exit 1
+          fi
+          cd "$(dirname "$PROJ")"
+          NAME=$(basename "$PROJ" .xcodeproj)
+          echo "Cartella del progetto: $PWD"
+          ls
+          if [ -f Podfile ]; then pod install; fi
+          if [ -d "$NAME.xcworkspace" ]; then
+            FLAG="-workspace"; TARGET="$PWD/$NAME.xcworkspace"; KEY="workspace"
+          else
+            FLAG="-project"; TARGET="$PWD/$NAME.xcodeproj"; KEY="project"
           fi
           echo "Uso: $FLAG $TARGET"
           SCHEMES=$(xcodebuild $FLAG "$TARGET" -list -json | python3 -c "import sys,json; print('\n'.join(json.load(sys.stdin)['$KEY']['schemes']))")
@@ -76,7 +67,7 @@ jobs:
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
-            -derivedDataPath build \
+            -derivedDataPath "$PWD/build" \
             -skipPackagePluginValidation \
             -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO \
