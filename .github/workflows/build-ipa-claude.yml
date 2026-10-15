@@ -5,7 +5,7 @@ on: workflow_dispatch
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
             pod install
           fi
 
-      - name: Trova workspace e scheme
+      - name: Trova workspace e scheme dell'app iOS
         run: |
           WS=$(find . -maxdepth 4 -name "*.xcworkspace" -not -path "*/Pods/*" -not -path "*.xcodeproj/*" | head -n 1)
           if [ -n "$WS" ]; then
@@ -47,9 +47,23 @@ jobs:
             exit 1
           fi
           echo "Uso: $FLAG $TARGET"
-          xcodebuild $FLAG "$TARGET" -list
-          SCHEME=$(xcodebuild $FLAG "$TARGET" -list -json | python3 -c "import sys,json; d=json.load(sys.stdin)['$KEY']['schemes']; m=[s for s in d if 'manic' in s.lower()]; print((m or d)[0])")
-          echo "Scheme: $SCHEME"
+          SCHEMES=$(xcodebuild $FLAG "$TARGET" -list -json | python3 -c "import sys,json; print('\n'.join(json.load(sys.stdin)['$KEY']['schemes']))")
+          echo "Scheme trovati:"
+          echo "$SCHEMES"
+          ORDERED=$( { echo "$SCHEMES" | grep -i manic || true; echo "$SCHEMES" | grep -vi manic || true; } )
+          SCHEME=""
+          while IFS= read -r S; do
+            [ -z "$S" ] && continue
+            if xcodebuild $FLAG "$TARGET" -scheme "$S" -sdk iphoneos -configuration Release -showBuildSettings 2>/dev/null | grep -Eq "PRODUCT_TYPE = com.apple.product-type.application[[:space:]]*$"; then
+              SCHEME="$S"
+              echo "Scheme dell'app iOS: $S"
+              break
+            fi
+          done <<< "$ORDERED"
+          if [ -z "$SCHEME" ]; then
+            echo "Nessuno scheme di app iOS trovato"
+            exit 1
+          fi
           echo "FLAG=$FLAG" >> "$GITHUB_ENV"
           echo "TARGET=$TARGET" >> "$GITHUB_ENV"
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
